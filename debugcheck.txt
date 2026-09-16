@@ -1,0 +1,280 @@
+﻿'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  Code2,
+  Boxes,
+  Database,
+  ShieldCheck,
+  LayoutGrid,
+  Compass,
+  Download,
+  Terminal,
+  Sparkles,
+  Bot,
+  MessageSquare,
+} from 'lucide-react';
+import {
+  SiHtml5,
+  SiCss,
+  SiJavascript,
+  SiSharp,
+  SiReact,
+  SiLaravel,
+  SiMysql,
+  SiTailwindcss,
+  SiBootstrap,
+  SiGit,
+  SiPostman,
+  SiBlender,
+  SiUnrealengine,
+  SiClaude,
+  SiGooglegemini,
+} from 'react-icons/si';
+import { Boxes as AccessIcon, AppWindow } from 'lucide-react';
+
+export default function Home() {
+  const [page, setPage] = useState<0 | 1>(0);
+
+  const goToBio = () => setPage(1);
+  const goToHero = () => setPage(0);
+
+  // Task 2: fully block wheel/touch scrolling â€” arrows/button are the only navigation
+  useEffect(() => {
+    const blockWheel = (e: WheelEvent) => e.preventDefault();
+    const blockTouch = (e: TouchEvent) => e.preventDefault();
+    window.addEventListener('wheel', blockWheel, { passive: false });
+    window.addEventListener('touchmove', blockTouch, { passive: false });
+    return () => {
+      window.removeEventListener('wheel', blockWheel);
+      window.removeEventListener('touchmove', blockTouch);
+    };
+  }, []);
+
+  const skills = [
+    { icon: Code2, label: 'Full-stack web development (frontend + backend)' },
+    { icon: Boxes, label: 'Building & consuming REST APIs' },
+    { icon: Database, label: 'Database design & modeling (MCD/MLD)' },
+    { icon: ShieldCheck, label: 'Authentication & role-based access control' },
+    { icon: LayoutGrid, label: 'Responsive UI/UX design' },
+    { icon: Compass, label: 'Structured problem analysis & solution design' },
+  ];
+
+  const tools = [
+    { label: 'HTML', icon: SiHtml5, color: '#E44D26' },
+    { label: 'CSS', icon: SiCss, color: '#2965F1' },
+    { label: 'JavaScript', icon: SiJavascript, color: '#F7DF1E' },
+    { label: 'C#', icon: SiSharp, color: '#9B4F96' },
+    { label: 'React', icon: SiReact, color: '#61DAFB' },
+    { label: 'Laravel', icon: SiLaravel, color: '#FF2D20' },
+    { label: 'MySQL', icon: SiMysql, color: '#4479A1' },
+    { label: 'Tailwind CSS', icon: SiTailwindcss, color: '#38BDF8' },
+    { label: 'Bootstrap', icon: SiBootstrap, color: '#7952B3' },
+    { label: 'Git/GitHub', icon: SiGit, color: '#F05032' },
+    { label: 'Postman', icon: SiPostman, color: '#FF6C37' },
+    { label: 'VS Code', icon: Terminal, color: '#007ACC' },
+    { label: 'Microsoft Access', icon: AccessIcon, color: '#A4373A' },
+    { label: 'Unreal Engine 5', icon: SiUnrealengine, color: '#313131' },
+    { label: 'Blender', icon: SiBlender, color: '#F5792A' },
+    { label: 'Microsoft Office', icon: AppWindow, color: '#D83B01' },
+    { label: 'Claude', icon: SiClaude, color: '#DA7756' },
+    { label: 'ChatGPT', icon: MessageSquare, color: '#74AA9C' },
+    { label: 'DeepSeek', icon: Bot, color: '#4D6BFE' },
+    { label: 'Gemini', icon: SiGooglegemini, color: '#4285F4' },
+    { label: 'Solara', icon: Sparkles, color: '#8B5CF6' },
+  ];
+
+  return (
+    <div
+      className="h-screen overflow-hidden relative"
+      style={{
+        backgroundImage: `url('/background.gif')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundAttachment: 'fixed',
+      }}
+    >
+      <div className="fixed inset-0 bg-black/20 pointer-events-none" />
+
+      {/* Task 2: page slides only on button/arrow press via `page` state */}
+      <div
+        className="w-full transition-transform duration-700 ease-in-out"
+        style={{ transform: `translateY(-${page * 100}vh)` }}
+      >
+        <section
+          id="hero"
+          className="h-screen w-full relative flex flex-col items-center justify-center px-6 z-10"
+        >
+          <div className="relative w-full max-w-sm rounded-3xl bg-white/[0.03] border border-white/[0.08] flex flex-col items-center justify-center p-8">
+            <div className="text-center animate-slide-left">
+              <h1 className="text-2xl md:text-3xl font-bold text-white mb-8 font-space-grotesk leading-tight">
+                Hi, my name is Ilyass â€” I'm an IT student
+              </h1>
+
+              <button
+                onClick={goToBio}
+                className="cta-button px-5 py-2.5 rounded-full font-space-grotesk font-semibold text-sm text-white transition-transform duration-300 hover:scale-105"
+              >
+                Let's get started
+              </button>
+            </div>
+          </div>
+
+          {/* Task 3: points down on hero */}
+          <button
+            onClick={goToBio}
+            aria-label="Next page"
+            className="next-arrow absolute bottom-8 left-1/2 -translate-x-1/2 z-20"
+          >
+            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </section>
+
+        <section
+          id="bio"
+          className="h-screen w-full relative flex flex-col items-center justify-center px-6 pt-28 pb-16 z-10 overflow-y-auto"
+        >
+          {/* Task 3: same arrow, flipped 180Â° to point up on bio */}
+          <button
+            onClick={goToHero}
+            aria-label="Back to top"
+            className="back-arrow absolute top-8 left-1/2 -translate-x-1/2 z-20 rotate-180"
+          >
+            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          <div className="relative w-full max-w-2xl rounded-3xl bg-white/[0.03] border border-white/[0.08] p-8 md:p-12">
+            <div className="relative mb-8">
+              <span className="peek-entity absolute -top-6 left-6 text-2xl select-none pointer-events-none">
+                ðŸ‘€
+              </span>
+              {/* Task 4: new quote */}
+              <blockquote className="font-space-grotesk text-lg md:text-xl font-semibold leading-snug pl-5 quote-border quote-glow">
+                "Nothing is promised in life except death. So be it â€” I will
+                make what's between count."
+              </blockquote>
+            </div>
+
+            <p className="font-space-grotesk text-sm md:text-base text-white/80 leading-relaxed mb-10">
+              I'm Ilyass Elharzli, currently studying computer development
+              (Technicien SpÃ©cialisÃ© en DÃ©veloppement Informatique) and
+              preparing to continue into an engineering program next. I
+              enjoy building full web applications end to end â€” from the
+              database up to the interface â€” and I like taking on things I
+              don't fully know yet and figuring them out along the way.
+            </p>
+
+            <div className="mb-8">
+              <h2 className="font-space-grotesk text-xs uppercase tracking-wide text-white/50 mb-3">
+                Skills
+              </h2>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                {skills.map(({ icon: Icon, label }) => (
+                  <li
+                    key={label}
+                    className="font-space-grotesk text-sm text-white/70 flex items-start gap-2.5"
+                  >
+                    <Icon className="w-4 h-4 mt-0.5 text-white/50 flex-shrink-0" strokeWidth={1.75} />
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="mb-10">
+              <h2 className="font-space-grotesk text-xs uppercase tracking-wide text-white/50 mb-3">
+                Tools & tech
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {tools.map(({ label, icon: Icon, color }) => (
+                  <span
+                    key={label}
+                    style={{ '--pill-color': color } as React.CSSProperties}
+                    className="tech-pill font-space-grotesk text-xs text-white/80 pl-3 pr-3.5 py-2 rounded-full border border-white/[0.12] bg-black/30 inline-flex items-center gap-2"
+                  >
+                    <Icon className="w-5 h-5 flex-shrink-0" style={{ color }} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            
+              <a              <a              href="/cv.pdf"
+              download
+              className="download-button inline-flex items-center gap-2 px-5 py-2.5 rounded-full font-space-grotesk font-semibold text-sm text-white transition-transform duration-300 hover:scale-105"
+            >
+              <Download className="w-4 h-4" strokeWidth={2} />
+              Download my resume
+            </a>
+          </div>
+        </section>
+      </div>
+
+      <style jsx>{`
+        .cta-button,
+        .download-button {
+          background: #4169e1;
+          animation: rgb-cycle 4s linear infinite;
+        }
+        .next-arrow,
+        .back-arrow {
+          color: #4169e1;
+          animation: rgb-cycle 4s linear infinite, arrow-bounce 1.8s ease-in-out infinite;
+        }
+        .quote-border {
+          border-left: 2px solid transparent;
+          border-image: linear-gradient(180deg, #4169e1, #a855f7, #4169e1) 1;
+          animation: rgb-cycle 4s linear infinite;
+        }
+        .quote-glow {
+          color: #ffd166;
+          text-shadow: 0 0 18px rgba(255, 209, 102, 0.35);
+        }
+        .peek-entity {
+          animation: peek 6s ease-in-out infinite;
+          transform-origin: bottom center;
+        }
+        @keyframes peek {
+          0%, 75%, 100% {
+            opacity: 0;
+            transform: translateY(10px) scale(0.6);
+          }
+          82% {
+            opacity: 1;
+            transform: translateY(-4px) scale(1);
+          }
+          92% {
+            opacity: 1;
+            transform: translateY(-4px) scale(1);
+          }
+          98% {
+            opacity: 0;
+            transform: translateY(10px) scale(0.6);
+          }
+        }
+        .tech-pill {
+          transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+        }
+        .tech-pill:hover {
+          border-color: var(--pill-color, rgba(255, 255, 255, 0.3));
+          background: rgba(0, 0, 0, 0.45);
+          box-shadow: 0 0 14px -2px var(--pill-color, transparent);
+        }
+        @keyframes rgb-cycle {
+          0% { filter: hue-rotate(0deg); }
+          100% { filter: hue-rotate(360deg); }
+        }
+        @keyframes arrow-bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-8px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+

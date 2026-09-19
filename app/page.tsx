@@ -526,12 +526,99 @@ const projectScreenshots = [
 // Memory game card icons — small, generic, on-brand symbol set
 const MEMORY_ICONS = ['💻', '🎮', '🧠', '⚡', '🚀', '🔧'];
 
-function buildShuffledDeck() {
+function buildInitialDeck() {
   const pairs = [...MEMORY_ICONS, ...MEMORY_ICONS];
-  const deck = pairs
-    .map((icon, i) => ({ id: i, icon, flipped: false, matched: false }))
-    .sort(() => Math.random() - 0.5);
+  return pairs.map((icon, i) => ({ id: i, icon, flipped: false, matched: false }));
+}
+
+function buildShuffledDeck() {
+  const deck = buildInitialDeck();
+
+  // Fisher-Yates shuffle runs only in client-side interactions/effects,
+  // never during the initial server render, avoiding hydration mismatches.
+  for (let i = deck.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+
   return deck;
+}
+
+const TERMINAL_SCRIPT = [
+  'const stack = [',
+  "  'React', 'Laravel', 'MySQL', 'Tailwind',",
+  '];',
+  '',
+  "const mindset = 'build → test → improve';",
+  '// AI helps me move faster.',
+  '// I still own the result.',
+].join('\n');
+
+function TerminalTyper() {
+  const [text, setText] = useState('');
+
+  useEffect(() => {
+    let index = 0;
+    let timer: number | null = null;
+    let cancelled = false;
+
+    const schedule = (delay: number) => {
+      if (cancelled) return;
+      timer = window.setTimeout(tick, delay);
+    };
+
+    const tick = () => {
+      if (cancelled) return;
+      if (document.hidden) {
+        schedule(500);
+        return;
+      }
+
+      if (index <= TERMINAL_SCRIPT.length) {
+        setText(TERMINAL_SCRIPT.slice(0, index));
+        index += 1;
+        schedule(index < TERMINAL_SCRIPT.length * 0.72 ? 28 : 22);
+        return;
+      }
+
+      schedule(1500);
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        index = 0;
+        setText('');
+        tick();
+      }, 1500);
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden && timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+        return;
+      }
+      if (!document.hidden && timer === null) {
+        schedule(0);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    tick();
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
+  return (
+    <pre className="terminal-code font-mono text-xs leading-6 text-white/65">
+      <code>{text}<span className="terminal-caret">▌</span></code>
+    </pre>
+  );
 }
 
 export default function Home() {
@@ -543,18 +630,18 @@ export default function Home() {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [toggleVisible, setToggleVisible] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [galleryRef, setGalleryRef] = useState<HTMLDivElement | null>(null);
-  const backgroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const galleryRef = useRef<HTMLDivElement | null>(null);
   const projectHeroGalleryRef = useRef<HTMLDivElement | null>(null);
   const projectHeroHoverRef = useRef(false);
-  const [terminalText, setTerminalText] = useState('');
 
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactSubject, setContactSubject] = useState('');
   const [contactMessage, setContactMessage] = useState('');
 
-  const [deck, setDeck] = useState(buildShuffledDeck);
+  // Keep the first render deterministic for SSR/hydration. The first real
+  // shuffle happens after hydration on the client.
+  const [deck, setDeck] = useState(buildInitialDeck);
   const [flippedIds, setFlippedIds] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
   const [bestMoves, setBestMoves] = useState<number | null>(null);
@@ -564,6 +651,8 @@ export default function Home() {
   const t = translations[lang];
   const timelineItems = t.sidebar.timeline as readonly TimelineItem[];
   const isRtl = lang === 'ar';
+  const heroNameParts = isRtl ? ['إلياس', 'الحرزلي'] : ['Ilyass', 'Elharzli'];
+  const heroNameAriaLabel = heroNameParts.join(' ');
 
   const goToPage = (nextPage: 0 | 1 | 2 | 3 | 4) => {
     setPage(nextPage);
@@ -590,9 +679,11 @@ export default function Home() {
 
         if (!visible.length) return;
         const index = sectionIds.indexOf(visible[0].target.id);
-        if (index >= 0) setPage(index as 0 | 1 | 2 | 3 | 4);
+        if (index >= 0) {
+          setPage((previous) => previous === index ? previous : (index as 0 | 1 | 2 | 3 | 4));
+        }
       },
-      { threshold: [0.35, 0.5, 0.65], rootMargin: '-8% 0px -8% 0px' },
+      { threshold: 0.5, rootMargin: '-8% 0px -8% 0px' },
     );
 
     sections.forEach((section) => observer.observe(section));
@@ -620,9 +711,10 @@ export default function Home() {
     );
 
   const scrollGallery = (direction: 'left' | 'right') => {
-    if (!galleryRef) return;
-    const amount = galleryRef.clientWidth * 0.82;
-    galleryRef.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' });
+    const gallery = galleryRef.current;
+    if (!gallery) return;
+    const amount = gallery.clientWidth * 0.82;
+    gallery.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' });
   };
 
   // Main STOCKIFY card: auto-advance the showcase, while still allowing manual scrolling.
@@ -631,7 +723,7 @@ export default function Home() {
     if (!gallery || page !== 2) return;
 
     const interval = window.setInterval(() => {
-      if (projectHeroHoverRef.current) return;
+      if (projectHeroHoverRef.current || document.hidden) return;
       const item = gallery.querySelector<HTMLElement>('[data-project-showcase-item]');
       if (!item) return;
       const gap = parseFloat(window.getComputedStyle(gallery).gap || '0');
@@ -648,40 +740,7 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [page]);
 
-  useEffect(() => {
-    const script = [
-      'const stack = [',
-      `  'React', 'Laravel', 'MySQL', 'Tailwind',`,
-      '];',
-      '',
-      `const mindset = 'build → test → improve';`,
-      '// AI helps me move faster.',
-      '// I still own the result.',
-    ].join('\n');
 
-    let index = 0;
-    let timer: number | undefined;
-
-    const tick = () => {
-      if (index <= script.length) {
-        setTerminalText(script.slice(0, index));
-        index += 1;
-        timer = window.setTimeout(tick, index < script.length * 0.72 ? 26 : 20);
-        return;
-      }
-
-      timer = window.setTimeout(() => {
-        index = 0;
-        setTerminalText('');
-        tick();
-      }, 1500);
-    };
-
-    tick();
-    return () => {
-      if (timer) window.clearTimeout(timer);
-    };
-  }, []);
 
   const handleContactSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -742,6 +801,10 @@ export default function Home() {
   };
 
   useEffect(() => {
+    // Randomize only after hydration so the server and client render the same
+    // initial deck and React never sees different markup during hydration.
+    setDeck(buildShuffledDeck());
+
     const stored = window.localStorage.getItem('ilyass-memory-best');
     if (stored) setBestMoves(Number(stored));
   }, []);
@@ -775,137 +838,28 @@ export default function Home() {
       setToggleVisible(true);
       return;
     }
+
     const panel = document.querySelector('.info-panel');
     if (!panel) return;
+
     let lastScrollTop = panel.scrollTop;
+    let ticking = false;
+
     const handleScroll = () => {
-      const currentScrollTop = panel.scrollTop;
-      setToggleVisible(currentScrollTop <= lastScrollTop || currentScrollTop <= 36);
-      lastScrollTop = currentScrollTop;
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        const currentScrollTop = panel.scrollTop;
+        const visible = currentScrollTop <= lastScrollTop || currentScrollTop <= 36;
+        setToggleVisible((previous) => previous === visible ? previous : visible);
+        lastScrollTop = currentScrollTop;
+        ticking = false;
+      });
     };
+
     panel.addEventListener('scroll', handleScroll, { passive: true });
     return () => panel.removeEventListener('scroll', handleScroll);
   }, [activePanel]);
-
-  useEffect(() => {
-    const canvas = backgroundCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let frame = 0;
-    let width = 0;
-    let height = 0;
-    let dpr = 1;
-    let time = 0;
-    let last = performance.now();
-    let targetX = 0;
-    let targetY = 0;
-    let currentX = 0;
-    let currentY = 0;
-
-    type Particle = { x: number; y: number; vx: number; vy: number; size: number; alpha: number; hue: number; phase: number };
-    let particles: Particle[] = [];
-
-    const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = window.innerWidth;
-      height = window.innerHeight;
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      const count = Math.min(180, Math.max(90, Math.floor((width * height) / 14500)));
-      particles = Array.from({ length: count }, () => ({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.025,
-        vy: (Math.random() - 0.5) * 0.018,
-        size: Math.random() * 1.5 + 0.3,
-        alpha: Math.random() * 0.42 + 0.08,
-        hue: [200, 220, 255, 285, 315][Math.floor(Math.random() * 5)],
-        phase: Math.random() * Math.PI * 2,
-      }));
-    };
-
-    const onPointerMove = (event: PointerEvent) => {
-      targetX = (event.clientX / Math.max(width, 1) - 0.5) * 2;
-      targetY = (event.clientY / Math.max(height, 1) - 0.5) * 2;
-    };
-
-    const glow = (x: number, y: number, radius: number, color: string, alpha: number, sx: number, sy: number) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(sx, sy);
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-      g.addColorStop(0, `${color}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`);
-      g.addColorStop(0.42, `${color}${Math.round(alpha * 0.42 * 255).toString(16).padStart(2, '0')}`);
-      g.addColorStop(1, `${color}00`);
-      ctx.fillStyle = g;
-      ctx.fillRect(-radius, -radius, radius * 2, radius * 2);
-      ctx.restore();
-    };
-
-    const render = (now: number) => {
-      const delta = Math.min(40, now - last);
-      last = now;
-      time += delta;
-      currentX += (targetX - currentX) * 0.018;
-      currentY += (targetY - currentY) * 0.018;
-      ctx.clearRect(0, 0, width, height);
-
-      const t = time * 0.001;
-      glow(width * 0.18 + currentX * 28, height * 0.25 + currentY * 18, Math.min(width, height) * 0.48, '#4f46e5', 0.12, 1.7 + Math.sin(t * 0.22) * 0.12, 0.55);
-      glow(width * 0.78 - currentX * 22, height * 0.22 + currentY * 14, Math.min(width, height) * 0.45, '#a855f7', 0.13, 1.9 + Math.cos(t * 0.19) * 0.12, 0.62);
-      glow(width * 0.52 + currentX * 18, height * 0.82 - currentY * 15, Math.min(width, height) * 0.42, '#ec4899', 0.08, 2.0, 0.52);
-      glow(width * 0.9 - currentX * 15, height * 0.72 + currentY * 12, Math.min(width, height) * 0.34, '#06b6d4', 0.08, 1.7, 0.5);
-
-      ctx.save();
-      ctx.globalAlpha = 0.105;
-      ctx.strokeStyle = 'rgba(145,130,255,.65)';
-      ctx.lineWidth = 0.45;
-      const grid = 78;
-      const ox = (time * 0.012) % grid + currentX * 10;
-      const oy = (time * 0.007) % grid + currentY * 8;
-      for (let x = -grid + ox; x < width + grid; x += grid) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + currentY * 18, height); ctx.stroke();
-      }
-      for (let y = -grid + oy; y < height + grid; y += grid) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y + currentX * 12); ctx.stroke();
-      }
-      ctx.restore();
-
-      particles.forEach((p) => {
-        p.x += p.vx * delta;
-        p.y += p.vy * delta;
-        if (p.x < -10) p.x = width + 10;
-        if (p.x > width + 10) p.x = -10;
-        if (p.y < -10) p.y = height + 10;
-        if (p.y > height + 10) p.y = -10;
-        const pulse = 0.55 + 0.45 * Math.sin(time * 0.0016 + p.phase);
-        const px = p.x + currentX * 8;
-        const py = p.y + currentY * 6;
-        ctx.beginPath();
-        ctx.fillStyle = `hsla(${p.hue}, 100%, 72%, ${p.alpha * pulse})`;
-        ctx.arc(px, py, p.size, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      frame = window.requestAnimationFrame(render);
-    };
-
-    resize();
-    window.addEventListener('resize', resize);
-    window.addEventListener('pointermove', onPointerMove, { passive: true });
-    frame = window.requestAnimationFrame(render);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener('resize', resize);
-      window.removeEventListener('pointermove', onPointerMove);
-    };
-  }, []);
 
   const skillIcons = [Code2, Boxes, Database, ShieldCheck, LayoutGrid, Compass];
 
@@ -975,16 +929,17 @@ export default function Home() {
       dir={isRtl ? 'rtl' : 'ltr'}
       className="portfolio-root relative min-h-screen overflow-x-hidden bg-[#05050a] text-white selection:bg-fuchsia-500/30"
     >
-      <div className="portfolio-bg pointer-events-none fixed inset-0 z-0" aria-hidden="true">
-        <div className="portfolio-bg-image absolute inset-[-4%]" />
-        <canvas ref={backgroundCanvasRef} className="portfolio-bg-canvas absolute inset-0 h-full w-full" />
+      <div className="portfolio-bg pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <div className="portfolio-bg-image absolute inset-[-6%]" />
+        <div className="portfolio-bg-orbit portfolio-bg-orbit-a absolute inset-[-12%]" />
+        <div className="portfolio-bg-orbit portfolio-bg-orbit-b absolute inset-[-14%]" />
+        <div className="portfolio-bg-stars absolute inset-[-8%]" />
+        <div className="portfolio-bg-grid absolute inset-[-8%]" />
         <div className="portfolio-bg-glow absolute inset-[-12%]" />
         <div className="portfolio-bg-vignette absolute inset-0" />
       </div>
-      <div className="pointer-events-none fixed inset-0 z-[1] opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] [background-size:40px_40px]" />
-
       <div className="fixed left-1/2 top-4 z-40 hidden -translate-x-1/2 md:block">
-        <nav className="nav-shell flex items-center gap-1 rounded-full border border-white/10 bg-black/35 p-1.5 backdrop-blur-xl">
+        <nav className="nav-shell flex items-center gap-1 rounded-full border border-white/10 bg-black/35 p-1.5 backdrop-blur-md">
           {footerNavItems.map((item, index) => (
             <button
               key={item.label}
@@ -1000,7 +955,7 @@ export default function Home() {
       </div>
 
       <div className={`fixed left-4 top-4 z-40 hidden items-center gap-2 md:flex ${page === 0 ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}>
-        <div className="page-index rounded-full border border-white/10 bg-black/30 px-3 py-2 backdrop-blur-xl">
+        <div className="page-index rounded-full border border-white/10 bg-black/30 px-3 py-2 backdrop-blur-md">
           <span className="font-space-grotesk text-xs text-white/55">0{page + 1}</span>
           <span className="mx-1.5 font-space-grotesk text-xs text-white/20">/</span>
           <span className="font-space-grotesk text-xs text-white/35">05</span>
@@ -1046,8 +1001,8 @@ export default function Home() {
 
       {mobileNavOpen && (
         <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-20 md:hidden">
-          <button aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-md" />
-          <div className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#09090f]/95 p-3 shadow-2xl backdrop-blur-2xl">
+          <button aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} className="absolute inset-0 bg-black/70" />
+          <div className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#09090f]/95 p-3 shadow-2xl backdrop-blur-lg">
             <div className="grid grid-cols-2 gap-2">
               {footerNavItems.map((item, index) => (
                 <button
@@ -1067,7 +1022,7 @@ export default function Home() {
       )}
 
       {activePanel === 'language' && (
-        <div className="fixed right-4 top-20 z-[70] lang-flyout rounded-2xl p-2 shadow-2xl backdrop-blur-xl md:right-24 md:top-4">
+        <div className="fixed right-4 top-20 z-[70] lang-flyout rounded-2xl p-2 shadow-2xl backdrop-blur-md md:right-24 md:top-4">
           {languageOptions.map((option) => (
             <button
               key={option.code}
@@ -1086,11 +1041,14 @@ export default function Home() {
       <div
         className={`info-panel-outer fixed right-0 top-0 z-[65] h-screen w-full transition-[width,opacity] duration-500 md:w-[44vw] ${activePanel === 'info' ? 'opacity-100' : 'pointer-events-none w-0 opacity-0'}`}
       >
-        <div className="info-panel relative h-full overflow-y-auto border-l border-white/10 bg-[#07070c]/90 shadow-2xl backdrop-blur-2xl">
+        <div className="info-panel relative h-full overflow-y-auto border-l border-white/10 bg-[#07070c]/90 shadow-2xl backdrop-blur-lg">
           <div className="info-panel-dynamic-bg pointer-events-none absolute inset-0" aria-hidden="true" />
           <div className="relative z-10">
           <div className="relative px-7 py-8 md:px-10 md:py-12">
-            <button onClick={closeSidebar} className="mb-10 flex items-center gap-2 font-space-grotesk text-sm text-white/50 transition-colors hover:text-white">
+            <button
+              onClick={closeSidebar}
+              className={`info-close-button mb-10 flex w-fit items-center gap-2 font-space-grotesk text-sm text-white/50 transition-colors hover:text-white ${isRtl ? 'mr-auto' : ''}`}
+            >
               <X className="h-4 w-4" />
               {t.sidebar.closeLabel}
             </button>
@@ -1108,7 +1066,7 @@ export default function Home() {
               </div>
               <div className="space-y-5 border-l border-white/10 pl-5">
                 {timelineItems.map((item, index) => (
-                  <div key={`${item.year}-${item.title}`} className="relative">
+                  <div key={`${item.year}-${item.title}`} className="relative" style={{ '--timeline-accent': ['#64c8ff','#a78bfa','#f08ac7'][index % 3] } as React.CSSProperties}>
                     <span className="timeline-dot" />
                     <div className="font-space-grotesk text-xs uppercase tracking-[0.2em] text-white/35">{item.year}</div>
                     <div className="mt-1 font-space-grotesk text-base font-semibold text-white">{item.title}</div>
@@ -1122,7 +1080,7 @@ export default function Home() {
               <h3 className="mb-5 font-space-grotesk text-xl font-bold">{t.sidebar.hobbiesTitle}</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {t.sidebar.hobbies.map(({ icon: Icon, label, color }) => (
-                  <div key={label} className="hobby-chip flex items-center gap-3 rounded-2xl px-4 py-3" style={{ '--hobby-color': color } as React.CSSProperties}>
+                  <div key={label} className="hobby-chip flex items-center gap-3 rounded-2xl px-4 py-3" style={{ '--hobby-color': color, '--hobby-soft': `${color}26` } as React.CSSProperties}>
                     <Icon className="h-5 w-5" style={{ color }} />
                     <span className="font-space-grotesk text-sm text-white/75">{label}</span>
                   </div>
@@ -1153,17 +1111,25 @@ export default function Home() {
             <div className="hero-grid w-full max-w-6xl">
               <div className="max-w-4xl">
                 <div className="eyebrow mb-5">FULL-STACK / WEB / AI-ASSISTED</div>
-                <h1 className="font-space-grotesk text-5xl font-bold leading-[0.92] tracking-tight sm:text-6xl md:text-8xl">
-                  <span className="hero-name-line text-gradient-animated" aria-label="Ilyass">
-                    {'Ilyass'.split('').map((letter, index) => (
-                      <span key={`${letter}-${index}`} className="hero-name-letter" style={{ animationDelay: `${index * 80}ms` }}>{letter}</span>
-                    ))}
-                  </span><br />
-                  <span className="hero-name-line text-gradient-animated" aria-label="Elharzli">
-                    {'Elharzli'.split('').map((letter, index) => (
-                      <span key={`${letter}-${index}`} className="hero-name-letter" style={{ animationDelay: `${420 + index * 70}ms` }}>{letter}</span>
-                    ))}
-                  </span>
+                <h1
+                  className={`hero-name-heading font-space-grotesk text-5xl font-bold leading-[0.92] tracking-tight sm:text-6xl md:text-8xl ${isRtl ? 'text-right' : 'text-left'}`}
+                  dir={isRtl ? 'rtl' : 'ltr'}
+                  aria-label={heroNameAriaLabel}
+                >
+                  {heroNameParts.map((part, partIndex) => (
+                    <span key={part} className="hero-name-line text-gradient-animated" aria-hidden="true">
+                      {Array.from(part).map((letter, index) => (
+                        <span
+                          key={`${part}-${index}`}
+                          className="hero-name-letter"
+                          style={{ animationDelay: `${partIndex === 0 ? index * 80 : 420 + index * 70}ms` }}
+                        >
+                          {letter}
+                        </span>
+                      ))}
+                      {partIndex === 0 && <br />}
+                    </span>
+                  ))}
                 </h1>
                 <p className="mt-7 max-w-2xl font-space-grotesk text-lg leading-8 text-white/60 md:text-xl">
                   {t.heroTitle}. {t.bio.split('. ')[0]}.
@@ -1179,14 +1145,14 @@ export default function Home() {
               </div>
 
               <div className="hero-side hidden lg:block">
-                <div className="terminal-card rounded-3xl border border-white/10 bg-black/30 p-5 backdrop-blur-xl">
+                <div className="terminal-card rounded-3xl border border-white/10 bg-black/30 p-5 backdrop-blur-md">
                   <div className="mb-4 flex items-center gap-2">
                     <span className="terminal-dot" />
                     <span className="terminal-dot terminal-dot-2" />
                     <span className="terminal-dot terminal-dot-3" />
                     <span className="ml-auto font-space-grotesk text-[10px] uppercase tracking-[0.22em] text-white/30">developer.exe</span>
                   </div>
-                  <pre className="terminal-code font-mono text-xs leading-6 text-white/65"><code>{terminalText}<span className="terminal-caret">▌</span></code></pre>
+                  <TerminalTyper />
                 </div>
               </div>
             </div>
@@ -1213,8 +1179,8 @@ export default function Home() {
                       {t.skills.map((skill, index) => {
                         const Icon = skillIcons[index];
                         return (
-                          <div key={skill} className="skill-row skill-highlight rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-3" style={{ '--skill-accent': ['#60a5fa','#a78bfa','#22d3ee','#f472b6','#34d399','#fbbf24'][index] } as React.CSSProperties}>
-                            <Icon className="h-4 w-4" style={{ color: ['#60a5fa','#a78bfa','#22d3ee','#f472b6','#34d399','#fbbf24'][index] }} />
+                          <div key={skill} className="skill-row skill-highlight rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-3" style={{ '--skill-accent': ['#64b5ff','#b18cff','#34e7ff','#ff78c8','#45e6ad','#ffd166'][index] } as React.CSSProperties}>
+                            <Icon className="h-4 w-4" style={{ color: ['#64b5ff','#b18cff','#34e7ff','#ff78c8','#45e6ad','#ffd166'][index] }} />
                             <span className="font-space-grotesk text-sm text-white/70">{skill}</span>
                           </div>
                         );
@@ -1226,7 +1192,7 @@ export default function Home() {
                     <div className="section-label mb-4">{t.sidebar.timelineTitle}</div>
                     <div className="grid gap-3 md:grid-cols-3">
                       {timelineItems.map((item, index) => (
-                        <div key={`${item.year}-${item.title}`} className="experience-card rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-3" style={{ '--experience-accent': ['#38bdf8','#a78bfa','#f472b6'][index % 3] } as React.CSSProperties}>
+                        <div key={`${item.year}-${item.title}`} className="experience-card rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-3" style={{ '--experience-accent': ['#64c8ff','#a78bfa','#f08ac7'][index % 3] } as React.CSSProperties}>
                           <div className="font-space-grotesk text-[10px] uppercase tracking-[0.2em] text-white/30">{item.year}</div>
                           <div className="mt-1 font-space-grotesk text-sm font-semibold text-white/80">{item.title}</div>
                           <div className="mt-1 font-space-grotesk text-xs text-white/40">{item.place}</div>
@@ -1277,8 +1243,8 @@ export default function Home() {
             </div>
           </section>
 
-          <section id="projects" className="min-h-screen w-full scroll-mt-24 px-5 py-24 md:px-10 md:py-28">
-            <div className="mx-auto max-w-6xl pr-1">
+          <section id="projects" className="projects-section min-h-screen w-full min-w-0 max-w-full overflow-x-clip scroll-mt-24 px-5 py-24 md:px-10 md:py-28">
+            <div className="mx-auto max-w-6xl min-w-0 pr-1">
               <div className="page-heading">
                 <div>
                   <div className="eyebrow">03 / SELECTED WORK</div>
@@ -1288,11 +1254,11 @@ export default function Home() {
               </div>
 
               <div className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-                <button onClick={openProjectModal} className="project-hero-card group rounded-3xl border border-white/10 bg-black/30 p-5 text-left backdrop-blur-xl md:p-6">
+                <button onClick={openProjectModal} className="project-hero-card group w-full min-w-0 rounded-3xl border border-white/10 bg-black/30 p-5 text-left backdrop-blur-md md:p-6">
                   <div className="relative overflow-hidden rounded-2xl border border-white/10">
                     <div
                       ref={projectHeroGalleryRef}
-                      className="project-showcase flex gap-3 overflow-x-auto"
+                      className="project-showcase flex w-full min-w-0 gap-3 overflow-x-auto"
                       aria-label="STOCKIFY screenshot showcase"
                       onMouseEnter={() => { projectHeroHoverRef.current = true; }}
                       onMouseLeave={() => { projectHeroHoverRef.current = false; }}
@@ -1306,6 +1272,9 @@ export default function Home() {
                           <img
                             src={`/screenshots/${shot.file}`}
                             alt={shot.alt}
+                            loading={index === 0 ? 'eager' : 'lazy'}
+                            decoding="async"
+                            draggable={false}
                             className={`h-full w-full ${index === 0 ? 'object-contain' : 'object-cover'}`}
                           />
                           <span className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 font-space-grotesk text-[10px] text-white/70 backdrop-blur-md">
@@ -1370,7 +1339,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section id="contact" className="contact-section min-h-screen w-full scroll-mt-24 px-5 py-24 md:px-10 md:py-28">
+          <section id="contact" className="contact-section min-h-screen w-full min-w-0 max-w-full overflow-x-clip scroll-mt-24 px-5 py-24 md:px-10 md:py-28">
             <div className="mx-auto max-w-6xl pr-1">
               <div className="page-heading">
                 <div>
@@ -1445,7 +1414,7 @@ export default function Home() {
                         disabled={card.matched}
                         aria-label={card.flipped || card.matched ? `Card ${card.icon}` : 'Hidden card'}
                         className={`memory-card aspect-square rounded-2xl font-space-grotesk text-2xl sm:text-3xl ${card.flipped || card.matched ? 'memory-card-open' : 'memory-card-hidden'} ${card.matched ? 'memory-card-matched' : ''}`}
-                        style={{ '--card-accent': ['#60a5fa','#a78bfa','#22d3ee','#f472b6','#34d399','#fbbf24'][card.id % 6] } as React.CSSProperties}
+                        style={{ '--card-accent': ['#64b5ff','#b18cff','#34e7ff','#ff78c8','#45e6ad','#ffd166'][card.id % 6] } as React.CSSProperties}
                       >
                         <span className="block transition-transform duration-300">{card.flipped || card.matched ? card.icon : '?'}</span>
                       </button>
@@ -1538,7 +1507,7 @@ export default function Home() {
 
       {projectModalOpen && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 md:p-8" onClick={closeProjectModal}>
-          <div className="absolute inset-0 bg-black/75 backdrop-blur-lg" />
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
           <div className="project-modal relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-[2rem] border border-white/10 bg-[#09090f]/95 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="project-modal-dynamic-bg pointer-events-none absolute inset-0" aria-hidden="true" />
             <div className="flex items-center justify-between gap-4 border-b border-white/10 bg-[#09090f]/95 p-5 md:p-8 md:pb-6">
@@ -1557,10 +1526,16 @@ export default function Home() {
               <button onClick={() => scrollGallery('left')} aria-label="Scroll left" className="gallery-nav-btn absolute left-1 top-1/2 z-20 flex -translate-y-1/2 items-center justify-center rounded-full">
                 <ChevronLeft className="h-5 w-5" />
               </button>
-              <div ref={setGalleryRef} className="gallery-scroll flex gap-4 overflow-x-auto px-10 py-2" style={{ scrollSnapType: 'x mandatory' }}>
+              <div ref={galleryRef} className="gallery-scroll flex gap-4 overflow-x-auto px-10 py-2" style={{ scrollSnapType: 'x mandatory' }}>
                 {projectScreenshots.map((shot, index) => (
                   <button key={shot.file} onClick={() => openLightbox(index)} className="gallery-item group relative flex-shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-black/20 text-left" style={{ scrollSnapAlign: 'center', width: 'min(82vw, 520px)' }}>
-                    <img src={`/screenshots/${shot.file}`} alt={shot.alt} className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-[1.02]" />
+                    <img
+                      src={`/screenshots/${shot.file}`}
+                      alt={shot.alt}
+                      loading={index === 0 ? 'eager' : 'lazy'}
+                      decoding="async"
+                      className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-[1.02]"
+                    />
                     <span className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 font-space-grotesk text-[10px] text-white/70 backdrop-blur-md">{String(index + 1).padStart(2, '0')} / {projectScreenshots.length}</span>
                   </button>
                 ))}
@@ -1571,19 +1546,31 @@ export default function Home() {
             </div>
 
             <div className="mt-8 grid gap-4 md:grid-cols-2">
-              <div className="modal-info-card rounded-2xl p-5">
+              <div
+                className="modal-info-card modal-detail-card rounded-2xl p-5"
+                style={{ '--detail-accent': '#64b5ff' } as React.CSSProperties}
+              >
                 <div className="section-label">{t.projects.problemTitle}</div>
                 <p className="mt-3 font-space-grotesk text-sm leading-6 text-white/60">{t.projects.problem}</p>
               </div>
-              <div className="modal-info-card rounded-2xl p-5">
+              <div
+                className="modal-info-card modal-detail-card rounded-2xl p-5"
+                style={{ '--detail-accent': '#45e6ad' } as React.CSSProperties}
+              >
                 <div className="section-label">{t.projects.solutionTitle}</div>
                 <p className="mt-3 font-space-grotesk text-sm leading-6 text-white/60">{t.projects.solution}</p>
               </div>
-              <div className="modal-info-card rounded-2xl p-5">
+              <div
+                className="modal-info-card modal-detail-card rounded-2xl p-5"
+                style={{ '--detail-accent': '#b18cff' } as React.CSSProperties}
+              >
                 <div className="section-label">{t.projects.roleTitle}</div>
                 <p className="mt-3 font-space-grotesk text-sm leading-6 text-white/60">{t.projects.role}</p>
               </div>
-              <div className="modal-info-card rounded-2xl p-5">
+              <div
+                className="modal-info-card modal-detail-card rounded-2xl p-5"
+                style={{ '--detail-accent': '#ff78c8' } as React.CSSProperties}
+              >
                 <div className="section-label">{t.projects.featuresTitle}</div>
                 <ul className="mt-3 space-y-2">
                   {t.projects.features.map((feature) => <li key={feature} className="font-space-grotesk text-sm leading-5 text-white/60">• {feature}</li>)}
@@ -1591,7 +1578,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
+            <div className="modal-stack-card mt-6 rounded-2xl border p-5">
               <div className="section-label mb-3">{t.projects.stackTitle}</div>
               <div className="flex flex-wrap gap-2">
                 {projectStack.map(({ label, icon: Icon, color }) => (
@@ -1616,7 +1603,13 @@ export default function Home() {
           <button onClick={(event) => { event.stopPropagation(); prevLightbox(); }} aria-label="Previous image" className="lightbox-nav-btn absolute left-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full md:left-8">
             <ChevronLeft className="h-6 w-6" />
           </button>
-          <img src={`/screenshots/${projectScreenshots[lightboxIndex].file}`} alt={projectScreenshots[lightboxIndex].alt} onClick={(event) => event.stopPropagation()} className="max-h-[90vh] max-w-[92vw] rounded-2xl object-contain" />
+          <img
+            src={`/screenshots/${projectScreenshots[lightboxIndex].file}`}
+            alt={projectScreenshots[lightboxIndex].alt}
+            onClick={(event) => event.stopPropagation()}
+            decoding="async"
+            className="max-h-[90vh] max-w-[92vw] rounded-2xl object-contain"
+          />
           <button onClick={(event) => { event.stopPropagation(); nextLightbox(); }} aria-label="Next image" className="lightbox-nav-btn absolute right-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full md:right-8">
             <ChevronRight className="h-6 w-6" />
           </button>
@@ -1722,19 +1715,31 @@ export default function Home() {
           -webkit-background-clip: text;
           background-clip: text;
           color: transparent;
-          animation: neon-gradient 7s ease-in-out infinite;
-          text-shadow: 0 0 30px rgba(139,92,246,.18);
+          animation: neon-gradient 26s ease-in-out infinite;
+          text-shadow: none;
         }
 
+        .hero-name-heading {
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          padding-inline: .10em;
+          overflow: visible;
+          direction: ltr;
+          unicode-bidi: isolate;
+        }
         .hero-name-line {
           display: inline-flex;
+          max-width: 100%;
+          white-space: nowrap;
           transform-origin: center;
+          overflow: visible;
         }
         .hero-name-letter {
           display: inline-block;
           transform-origin: 50% 72%;
           animation: hero-letter-pulse 2.8s ease-in-out infinite;
-          will-change: transform, filter;
+          will-change: transform;
         }
 
         .terminal-code {
@@ -1748,7 +1753,7 @@ export default function Home() {
           margin-left: .12rem;
           color: #67e8f9;
           animation: caret-blink .85s steps(1,end) infinite;
-          text-shadow: 0 0 12px rgba(34,211,238,.7);
+          text-shadow: none;
         }
 
         .sidebar-action-group {
@@ -1761,8 +1766,18 @@ export default function Home() {
 
         .sidebar-icon-svg {
           color: #e0f2fe;
-          animation: icon-color-shift 5.5s ease-in-out infinite;
-          filter: drop-shadow(0 0 8px rgba(96,165,250,.35));
+          filter: drop-shadow(0 0 6px rgba(96,165,250,.30));
+          transition: color .24s ease, filter .24s ease, transform .24s ease;
+        }
+        .lang-icon-btn:hover .sidebar-icon-svg {
+          color: #67e8f9;
+          filter: drop-shadow(0 0 8px rgba(34,211,238,.42));
+          transform: scale(1.05);
+        }
+        .info-icon-btn:hover .sidebar-icon-svg {
+          color: #c4b5fd;
+          filter: drop-shadow(0 0 8px rgba(167,139,250,.42));
+          transform: scale(1.05);
         }
 
 
@@ -1776,7 +1791,7 @@ export default function Home() {
           transform: translateY(-3px) scale(1.01);
           border-color: var(--detail-accent);
           background: color-mix(in srgb, var(--detail-accent) 14%, rgba(5,5,10,.92));
-          box-shadow: 0 0 18px -10px var(--detail-accent);
+          box-shadow: 0 0 14px -10px var(--detail-accent);
           outline: none;
         }
         .project-detail-card:active {
@@ -1815,115 +1830,189 @@ export default function Home() {
           background-size: cover;
           background-position: center;
           background-repeat: no-repeat;
-          transform: scale(1.06);
-          animation: cyberpunk-drift 18s ease-in-out infinite alternate;
-          filter: saturate(1.35) contrast(1.08) brightness(1.18);
-          will-change: transform;
+          opacity: .42;
+          filter: saturate(1.5) contrast(1.06) brightness(1.1);
         }
 
-        .portfolio-bg-canvas {
-          opacity: 1.0;
-          mix-blend-mode: screen;
+        .portfolio-bg-orbit {
+          border-radius: 50%;
+          mix-blend-mode: normal;
+          transform-origin: 50% 50%;
+          will-change: transform;
+          backface-visibility: hidden;
+          transform: translateZ(0);
+        }
+        .portfolio-bg-orbit-a {
+          background:
+            radial-gradient(ellipse at 24% 34%, rgba(72,148,255,.24) 0 10%, transparent 48%),
+            radial-gradient(ellipse at 76% 28%, rgba(174,105,255,.22) 0 12%, transparent 50%);
+          filter: none;
+          opacity: .74;
+          animation: bg-orbit-a 120s linear infinite;
+        }
+        .portfolio-bg-orbit-b {
+          background:
+            radial-gradient(circle at 18% 62%, rgba(43,221,255,.14) 0 7%, transparent 36%),
+            radial-gradient(circle at 82% 60%, rgba(255,109,201,.14) 0 8%, transparent 38%);
+          filter: none;
+          opacity: .60;
+          animation: bg-orbit-b 150s linear infinite reverse;
+        }
+
+        .portfolio-bg-stars {
+          background-image:
+            radial-gradient(circle at 20% 30%, rgba(110,210,255,.72) 0 1px, transparent 1.7px),
+            radial-gradient(circle at 68% 24%, rgba(255,134,216,.66) 0 1px, transparent 1.7px),
+            radial-gradient(circle at 82% 74%, rgba(174,128,255,.64) 0 1px, transparent 1.8px),
+            radial-gradient(circle at 34% 78%, rgba(67,235,255,.48) 0 1px, transparent 1.8px);
+          background-size: 150px 150px, 190px 190px, 230px 230px, 170px 170px;
+          opacity: .40;
+          mix-blend-mode: normal;
+          animation: bg-stars-loop 160s linear infinite;
+          will-change: transform;
+          backface-visibility: hidden;
+        }
+
+        .portfolio-bg-grid {
+          background-image:
+            linear-gradient(rgba(112,156,255,.075) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(112,156,255,.075) 1px, transparent 1px);
+          background-size: 84px 84px;
+          opacity: .20;
+          transform: rotate(-3deg) translateZ(0);
+          animation: bg-grid-loop 90s linear infinite;
+          will-change: transform;
+          backface-visibility: hidden;
         }
 
         .portfolio-bg-glow {
           background:
-            radial-gradient(circle at 18% 22%, rgba(59,130,246,.20), transparent 28%),
-            radial-gradient(circle at 82% 28%, rgba(168,85,247,.24), transparent 30%),
-            radial-gradient(circle at 58% 82%, rgba(236,72,153,.14), transparent 26%);
-          mix-blend-mode: screen;
-          animation: cyberpunk-glow 18s ease-in-out infinite alternate;
+            radial-gradient(circle at 16% 24%, rgba(76,146,255,.18), transparent 26%),
+            radial-gradient(circle at 84% 30%, rgba(173,105,255,.19), transparent 28%),
+            radial-gradient(circle at 58% 82%, rgba(255,111,198,.14), transparent 25%),
+            radial-gradient(circle at 30% 70%, rgba(50,220,255,.10), transparent 22%);
+          mix-blend-mode: normal;
+          opacity: .76;
+          animation: bg-glow-loop 120s linear infinite;
+          will-change: transform;
+          backface-visibility: hidden;
+          backface-visibility: hidden;
         }
 
         .portfolio-bg-vignette {
-          background: radial-gradient(circle at center, transparent 34%, rgba(2,3,10,.30) 72%, rgba(2,3,10,.55) 100%);
+          background: radial-gradient(circle at center, transparent 28%, rgba(2,3,10,.16) 65%, rgba(2,3,10,.54) 100%);
         }
 
-        .portfolio-bg::after {
-          content: '';
-          position: absolute;
-          inset: -10%;
-          pointer-events: none;
-          background:
-            radial-gradient(circle at 22% 30%, rgba(34,211,238,.16) 0 1.5px, transparent 2px),
-            radial-gradient(circle at 72% 20%, rgba(244,114,182,.18) 0 1.4px, transparent 2px),
-            radial-gradient(circle at 82% 72%, rgba(139,92,246,.16) 0 1.6px, transparent 2.2px),
-            linear-gradient(110deg, transparent 32%, rgba(96,165,250,.08) 46%, transparent 57%);
-          background-size: 170px 170px, 230px 230px, 210px 210px, 180% 180%;
-          mix-blend-mode: screen;
-          opacity: .7;
-          animation: cyberpunk-particles 9s linear infinite;
+        .info-close-button {
+          width: fit-content;
+          flex: 0 0 auto;
         }
 
         .info-panel-dynamic-bg {
           background:
-            radial-gradient(circle at 15% 18%, rgba(34,211,238,.20), transparent 28%),
-            radial-gradient(circle at 85% 25%, rgba(168,85,247,.26), transparent 32%),
-            radial-gradient(circle at 55% 78%, rgba(236,72,153,.16), transparent 30%),
-            linear-gradient(135deg, rgba(20,10,44,.88), rgba(5,7,18,.94));
-          background-size: 140% 140%, 150% 150%, 145% 145%, 100% 100%;
-          opacity: .92;
-          animation: info-bg-drift 14s ease-in-out infinite alternate;
+            linear-gradient(135deg, rgba(7,10,24,.96), rgba(19,8,43,.93)),
+            radial-gradient(circle at 18% 24%, rgba(64,196,255,.22), transparent 30%),
+            radial-gradient(circle at 82% 34%, rgba(181,119,255,.24), transparent 31%),
+            radial-gradient(circle at 52% 80%, rgba(255,109,196,.16), transparent 30%);
+          opacity: .98;
+          overflow: hidden;
+          transform: translateZ(0);
+          isolation: isolate;
         }
         .info-panel-dynamic-bg::before,
         .info-panel-dynamic-bg::after {
           content: '';
           position: absolute;
-          inset: 0;
+          inset: -12%;
           pointer-events: none;
+          will-change: transform;
+          backface-visibility: hidden;
         }
         .info-panel-dynamic-bg::before {
-          background: repeating-linear-gradient(115deg, transparent 0 54px, rgba(103,232,249,.035) 55px, transparent 56px 108px);
-          animation: info-grid-shift 12s linear infinite;
+          background:
+            radial-gradient(ellipse at 26% 30%, rgba(57,212,255,.20) 0 9%, transparent 40%),
+            radial-gradient(ellipse at 76% 68%, rgba(183,112,255,.18) 0 10%, transparent 42%);
+          filter: none;
+          mix-blend-mode: normal;
+          animation: info-orbit-loop 120s linear infinite;
         }
         .info-panel-dynamic-bg::after {
-          background: radial-gradient(circle at 70% 55%, rgba(255,255,255,.09) 0 1px, transparent 2px);
-          background-size: 52px 52px;
-          opacity: .35;
-          animation: info-star-drift 16s linear infinite;
+          background-image:
+            radial-gradient(circle at 20% 25%, rgba(108,227,255,.44) 0 1px, transparent 1.7px),
+            radial-gradient(circle at 78% 48%, rgba(226,156,255,.40) 0 1px, transparent 1.7px),
+            radial-gradient(circle at 42% 78%, rgba(74,238,255,.34) 0 1px, transparent 1.8px);
+          background-size: 120px 120px, 160px 160px, 200px 200px;
+          opacity: .20;
+          mix-blend-mode: normal;
+          animation: info-stars-loop 120s linear infinite;
         }
 
         .project-modal-dynamic-bg {
+          position: absolute;
+          inset: 0;
           background:
-            radial-gradient(ellipse at 18% 22%, rgba(59,130,246,.22), transparent 30%),
-            radial-gradient(ellipse at 80% 24%, rgba(168,85,247,.25), transparent 32%),
-            radial-gradient(ellipse at 56% 78%, rgba(236,72,153,.18), transparent 30%),
-            linear-gradient(125deg, rgba(8,10,26,.30), rgba(20,7,35,.46));
-          background-size: 160% 150%, 150% 160%, 165% 155%, 100% 100%;
-          mix-blend-mode: screen;
-          opacity: .85;
-          animation: project-bg-flow 10s ease-in-out infinite alternate;
+            radial-gradient(ellipse at 18% 22%, rgba(72,157,255,.20), transparent 32%),
+            radial-gradient(ellipse at 80% 24%, rgba(182,112,255,.21), transparent 34%),
+            radial-gradient(ellipse at 56% 78%, rgba(255,109,196,.16), transparent 32%),
+            linear-gradient(125deg, rgba(7,10,27,.18), rgba(25,7,38,.34));
+          mix-blend-mode: normal;
+          opacity: .88;
+          overflow: hidden;
+          transform: translateZ(0);
+          animation: modal-bg-drift 36s ease-in-out infinite alternate;
+          will-change: transform, opacity;
+          backface-visibility: hidden;
         }
         .project-modal-dynamic-bg::before,
         .project-modal-dynamic-bg::after {
           content: '';
           position: absolute;
-          inset: 0;
+          inset: -8%;
+          pointer-events: none;
+          will-change: transform;
+          backface-visibility: hidden;
         }
         .project-modal-dynamic-bg::before {
           background:
-            linear-gradient(90deg, transparent 0 18%, rgba(96,165,250,.08) 19%, transparent 20% 44%, rgba(236,72,153,.06) 45%, transparent 46%),
-            linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
-          background-size: 100% 100%, 56px 56px, 56px 56px;
-          opacity: .6;
-          animation: project-grid-flow 8s linear infinite;
+            radial-gradient(ellipse at 24% 30%, rgba(61,210,255,.18) 0 9%, transparent 38%),
+            radial-gradient(ellipse at 74% 62%, rgba(190,113,255,.17) 0 10%, transparent 40%),
+            linear-gradient(rgba(255,255,255,.016) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+          background-size: 180% 180%, 190% 190%, 56px 56px, 56px 56px;
+          opacity: .54;
+          filter: none;
+          mix-blend-mode: normal;
+          animation: project-orbit-loop 64s linear infinite;
         }
         .project-modal-dynamic-bg::after {
-          background: radial-gradient(circle, rgba(255,255,255,.14) 0 1px, transparent 1.5px);
-          background-size: 84px 84px;
+          background:
+            radial-gradient(circle, rgba(107,224,255,.38) 0 1px, transparent 1.5px),
+            radial-gradient(circle, rgba(228,151,255,.34) 0 1px, transparent 1.5px);
+          background-size: 84px 84px, 126px 126px;
           opacity: .22;
-          animation: project-stars 11s linear infinite;
+          mix-blend-mode: normal;
+          animation: project-stars-loop 72s linear infinite;
         }
 
-        @keyframes cyberpunk-drift {
-          0% { transform: scale(1.05) translate3d(-1%,-0.5%,0); }
-          100% { transform: scale(1.11) translate3d(1%,0.75%,0); }
+        @keyframes bg-orbit-a {
+          from { transform: rotate(0deg) scale(1.02); }
+          to { transform: rotate(360deg) scale(1.02); }
         }
-
-        @keyframes cyberpunk-glow {
-          0% { transform: translate3d(-1%,0,0) scale(1); opacity:.7; }
-          100% { transform: translate3d(1.5%,-1%,0) scale(1.06); opacity:1; }
+        @keyframes bg-orbit-b {
+          from { transform: rotate(0deg) scale(1.04); }
+          to { transform: rotate(-360deg) scale(1.04); }
+        }
+        @keyframes bg-stars-loop {
+          from { transform: translate3d(0, 0, 0); }
+          to { transform: translate3d(-150px, -150px, 0); }
+        }
+        @keyframes bg-grid-loop {
+          from { transform: translate3d(0, 0, 0) rotate(-3deg); }
+          to { transform: translate3d(-84px, -84px, 0) rotate(-3deg); }
+        }
+        @keyframes bg-glow-loop {
+          from { transform: rotate(0deg) scale(1); }
+          to { transform: rotate(360deg) scale(1); }
         }
 
         .terminal-card,
@@ -1943,9 +2032,10 @@ export default function Home() {
         }
 
         .glass-card {
-          background: rgba(255,255,255,0.035);
+          background: rgba(255,255,255,0.045);
           border: 1px solid rgba(255,255,255,0.08);
-          backdrop-filter: blur(18px);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
         }
 
         .terminal-dot {
@@ -1974,11 +2064,7 @@ export default function Home() {
           background: linear-gradient(100deg, #3b82f6, #8b5cf6 34%, #ec4899 58%, #22d3ee 82%, #3b82f6);
           background-size: 220% 220%;
           box-shadow: 0 0 16px rgba(124,58,237,0.15);
-          animation: neon-gradient 10s ease-in-out infinite;
-        }
-
-        .cta-button, .download-button, .secondary-button, .game-reset-btn {
-          will-change: transform;
+          animation: neon-gradient 26s ease-in-out infinite;
         }
 
         .cta-button,
@@ -2018,8 +2104,8 @@ export default function Home() {
           border: 1px solid rgba(255,255,255,0.14);
           background: linear-gradient(110deg, rgba(59,130,246,.14), rgba(139,92,246,.18), rgba(236,72,153,.14), rgba(59,130,246,.14));
           background-size: 260% 260%;
-          backdrop-filter: blur(10px);
-          animation: neon-gradient 8s ease-in-out infinite;
+          backdrop-filter: blur(6px);
+          animation: neon-gradient 24s ease-in-out infinite;
         }
 
         .arrow-bubble {
@@ -2028,7 +2114,7 @@ export default function Home() {
           color: rgba(255,255,255,0.6);
           border: 1px solid rgba(255,255,255,0.1);
           background: rgba(0,0,0,0.3);
-          backdrop-filter: blur(12px);
+          backdrop-filter: blur(6px);
           transition: transform .2s ease, color .2s ease, background .2s ease;
         }
         .arrow-bubble:hover {
@@ -2036,6 +2122,9 @@ export default function Home() {
           color: white;
           background: rgba(255,255,255,0.08);
         }
+
+        .secondary-button { backdrop-filter: none; }
+        .arrow-bubble { backdrop-filter: none; background: rgba(0,0,0,0.42); }
 
         .quote-glow {
           color: #ffd166;
@@ -2069,13 +2158,13 @@ export default function Home() {
           transform: translateY(-1px) scale(1.01);
           border-color: var(--skill-accent);
           background: color-mix(in srgb, var(--skill-accent) 14%, rgba(5,5,10,.90));
-          box-shadow: 0 0 18px -10px var(--skill-accent);
+          box-shadow: 0 0 14px -10px var(--skill-accent);
         }
         .experience-card:hover {
           transform: translateY(-1px) scale(1.01);
           border-color: var(--experience-accent);
           background: color-mix(in srgb, var(--experience-accent) 14%, rgba(5,5,10,.90));
-          box-shadow: 0 0 18px -10px var(--experience-accent);
+          box-shadow: 0 0 14px -10px var(--experience-accent);
         }
 
         .tech-pill {
@@ -2085,18 +2174,19 @@ export default function Home() {
           transform: translateY(-1px) scale(1.02);
           border-color: var(--pill-color, rgba(255,255,255,0.25));
           background: color-mix(in srgb, var(--pill-color, #60a5fa) 14%, rgba(5,5,10,.92));
-          box-shadow: 0 0 14px -9px var(--pill-color, transparent);
+          box-shadow: 0 0 12px -9px var(--pill-color, transparent);
         }
 
         .hobby-chip {
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(0,0,0,0.22);
-          transition: border-color .25s ease, background .25s ease, transform .25s ease;
+          border: 1px solid color-mix(in srgb, var(--hobby-color, #64c8ff) 22%, rgba(255,255,255,0.08));
+          background: linear-gradient(135deg, color-mix(in srgb, var(--hobby-color, #64c8ff) 7%, rgba(5,5,10,0.92)), rgba(5,5,10,0.70));
+          transition: border-color .22s ease, background .22s ease, transform .22s ease, box-shadow .22s ease;
         }
         .hobby-chip:hover {
-          transform: translateY(-1px);
-          border-color: var(--hobby-color, rgba(255,255,255,0.2));
-          background: rgba(255,255,255,0.045);
+          transform: translateY(-1px) scale(1.01);
+          border-color: color-mix(in srgb, var(--hobby-color, #64c8ff) 72%, white 28%);
+          background: linear-gradient(135deg, color-mix(in srgb, var(--hobby-color, #64c8ff) 13%, rgba(5,5,10,0.94)), rgba(5,5,10,0.72));
+          box-shadow: 0 0 14px -10px var(--hobby-color, transparent);
         }
 
         .timeline-dot {
@@ -2106,8 +2196,8 @@ export default function Home() {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: #a78bfa;
-          box-shadow: 0 0 14px rgba(167,139,250,0.8);
+          background: var(--timeline-accent, #a78bfa);
+          box-shadow: 0 0 10px -2px var(--timeline-accent, #a78bfa);
         }
 
         .social-icon-btn,
@@ -2188,7 +2278,7 @@ export default function Home() {
           border: 1px solid rgba(255,255,255,0.14);
           background: linear-gradient(110deg, rgba(59,130,246,.12), rgba(139,92,246,.16), rgba(236,72,153,.12));
           background-size: 240% 240%;
-          animation: neon-gradient 7s ease-in-out infinite;
+          animation: none;
           transition: background .2s ease, color .2s ease, transform .2s ease, box-shadow .2s ease;
         }
         .game-reset-btn:hover { color: white; }
@@ -2210,7 +2300,7 @@ export default function Home() {
           background: linear-gradient(100deg, #3b82f6, #8b5cf6 52%, #ec4899);
           color: white;
           transition: transform .2s ease, filter .2s ease, box-shadow .2s ease;
-          backdrop-filter: blur(12px);
+          backdrop-filter: none;
           box-shadow: 0 0 24px rgba(124,58,237,0.18);
         }
         .modal-close:hover,
@@ -2249,17 +2339,13 @@ export default function Home() {
         .project-showcase-logo img {
           padding: 3.5rem;
           transform: scale(.72);
-          filter: drop-shadow(0 0 28px rgba(139,92,246,.28));
+          filter: drop-shadow(0 0 18px rgba(139,92,246,.22));
         }
 
         .project-modal {
           background-image: radial-gradient(circle at 14% 10%, rgba(59,130,246,.09), transparent 28%), radial-gradient(circle at 86% 16%, rgba(168,85,247,.1), transparent 30%), linear-gradient(rgba(9,9,15,.96), rgba(9,9,15,.98));
+          isolation: isolate;
         }
-        .project-modal-dynamic-bg {
-          background: radial-gradient(circle at 22% 26%, rgba(59,130,246,.12), transparent 26%), radial-gradient(circle at 76% 34%, rgba(236,72,153,.1), transparent 24%), radial-gradient(circle at 52% 78%, rgba(34,211,238,.08), transparent 28%);
-          animation: modal-bg-drift 12s ease-in-out infinite alternate;
-        }
-
         .contact-section .section-label { color: rgba(191,219,254,.72); text-shadow: 0 0 14px rgba(96,165,250,.18); }
         .contact-section .field-label { color: rgba(165,180,252,.7); }
         .contact-section .contact-input {
@@ -2274,8 +2360,6 @@ export default function Home() {
 
         .memory-card-hidden {
           background: linear-gradient(145deg, rgba(59,130,246,.075), rgba(139,92,246,.075), rgba(236,72,153,.06));
-          background-size: 200% 200%;
-          animation: memory-card-shift 12s ease-in-out infinite;
         }
         .memory-card:hover:not(:disabled) {
           transform: translateY(-1px) scale(1.015);
@@ -2290,7 +2374,64 @@ export default function Home() {
           background: rgba(255,255,255,0.025);
         }
 
-        .site-footer { background: rgba(0,0,0,0.22); backdrop-filter: blur(12px); border-top: 1px solid rgba(255,255,255,0.08); }
+        .modal-detail-card,
+        .modal-stack-card {
+          position: relative;
+          overflow: hidden;
+          background: rgba(255,255,255,.018);
+          border: 1px solid rgba(255,255,255,.08);
+          transition: transform .28s ease, border-color .28s ease, background .28s ease, box-shadow .28s ease;
+        }
+        .modal-detail-card::before,
+        .modal-stack-card::before {
+          content: '';
+          position: absolute;
+          inset: -18% -10%;
+          background:
+            radial-gradient(circle at 18% 25%, rgba(255,255,255,.07), transparent 28%),
+            radial-gradient(circle at 82% 74%, rgba(255,255,255,.04), transparent 30%);
+          opacity: .58;
+          pointer-events: none;
+          transform: translate3d(-2%, 0, 0);
+          transition: opacity .35s ease, transform .7s ease;
+        }
+        .modal-detail-card > *,
+        .modal-stack-card > * {
+          position: relative;
+          z-index: 1;
+        }
+
+        .modal-detail-card {
+          border-color: color-mix(in srgb, var(--detail-accent, #64b5ff) 16%, rgba(255,255,255,.08));
+        }
+        .modal-detail-card:hover,
+        .modal-detail-card:focus-visible {
+          transform: translateY(-2px) scale(1.005);
+          border-color: color-mix(in srgb, var(--detail-accent, #64b5ff) 46%, rgba(255,255,255,.18));
+          background: color-mix(in srgb, var(--detail-accent, #64b5ff) 6%, rgba(255,255,255,.02));
+          box-shadow: 0 0 16px -12px var(--detail-accent, #64b5ff);
+          outline: none;
+        }
+        .modal-detail-card:hover::before,
+        .modal-stack-card:hover::before {
+          opacity: .86;
+          transform: translate3d(3%, -2%, 0);
+        }
+        .modal-detail-card:hover .section-label {
+          color: color-mix(in srgb, var(--detail-accent, #64b5ff) 58%, white 42%);
+        }
+        .modal-stack-card {
+          border-color: rgba(255,255,255,.08);
+          background: rgba(255,255,255,.018);
+        }
+        .modal-stack-card:hover {
+          transform: translateY(-2px) scale(1.002);
+          border-color: rgba(255,255,255,.16);
+          background: rgba(255,255,255,.026);
+          box-shadow: 0 0 16px -14px rgba(255,255,255,.3);
+        }
+
+        .site-footer { background: rgba(0,0,0,0.22); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); border-top: 1px solid rgba(255,255,255,0.08); }
         .footer-nav-link { transition: color .2s ease; }
         .footer-nav-link:hover { color: white; }
         .footer-social-btn { width: 36px; height: 36px; }
@@ -2307,65 +2448,50 @@ export default function Home() {
           50% { background-position: 100% 50%; }
         }
         @keyframes hero-letter-pulse {
-          0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
-          20% { transform: translateY(-2px) scale(1.07); filter: brightness(1.22); }
-          40% { transform: translateY(1px) scale(.96); filter: brightness(1.05); }
-          60% { transform: translateY(-1px) scale(1.04); filter: brightness(1.16); }
-          80% { transform: translateY(0) scale(.985); filter: brightness(1); }
+          0%, 100% { transform: translateY(0) scale(1); }
+          20% { transform: translateY(-2px) scale(1.06); }
+          40% { transform: translateY(1px) scale(.97); }
+          60% { transform: translateY(-1px) scale(1.035); }
+          80% { transform: translateY(0) scale(.99); }
         }
-        @keyframes cyberpunk-particles {
-          0% { transform: translate3d(-2%, -1%, 0) scale(1); background-position: 0 0, 0 0, 0 0, 0 0; opacity: .48; }
-          50% { transform: translate3d(1%, 1%, 0) scale(1.03); background-position: 38px -24px, -52px 30px, 26px 44px, 24% 52%; opacity: .78; }
-          100% { transform: translate3d(2%, -1%, 0) scale(1.06); background-position: 84px -46px, -104px 58px, 52px 88px, 52% 48%; opacity: .58; }
+        @keyframes info-orbit-loop {
+          from { transform: rotate(0deg) scale(1); }
+          to { transform: rotate(360deg) scale(1); }
         }
-        @keyframes info-bg-drift {
-          0% { transform: scale(1.03) translate3d(-2%, -1%, 0); filter: hue-rotate(0deg) saturate(1); }
-          50% { transform: scale(1.08) translate3d(1%, 1%, 0); filter: hue-rotate(8deg) saturate(1.12); }
-          100% { transform: scale(1.05) translate3d(2%, -1.5%, 0); filter: hue-rotate(-7deg) saturate(1.08); }
-        }
-        @keyframes info-grid-shift {
-          from { transform: translate3d(-2%, -1%, 0); }
-          to { transform: translate3d(3%, 2%, 0); }
-        }
-        @keyframes info-star-drift {
+        @keyframes info-stars-loop {
           from { transform: translate3d(0, 0, 0); }
-          to { transform: translate3d(36px, -24px, 0); }
+          to { transform: translate3d(-120px, -120px, 0); }
         }
-        @keyframes project-bg-flow {
-          0% { transform: scale(1.01) translate3d(-2%, -1%, 0); filter: hue-rotate(0deg) saturate(1); opacity: .72; }
-          50% { transform: scale(1.07) translate3d(1.5%, 1%, 0); filter: hue-rotate(12deg) saturate(1.2); opacity: .9; }
-          100% { transform: scale(1.04) translate3d(2%, -1%, 0); filter: hue-rotate(-10deg) saturate(1.12); opacity: .8; }
+        @keyframes project-orbit-loop {
+          from { transform: rotate(0deg) scale(1); }
+          to { transform: rotate(360deg) scale(1); }
         }
-        @keyframes project-grid-flow {
-          from { background-position: 0 0, 0 0, 0 0; }
-          to { background-position: 48px 0, 40px 56px, 56px 40px; }
-        }
-        @keyframes project-stars {
-          from { transform: translate3d(-12px, 6px, 0); }
-          to { transform: translate3d(42px, -22px, 0); }
+        @keyframes project-stars-loop {
+          from { transform: translate3d(0, 0, 0); }
+          to { transform: translate3d(-126px, -126px, 0); }
         }
         @keyframes caret-blink { 0%, 48% { opacity: 1; } 49%, 100% { opacity: 0; } }
-        @keyframes icon-color-shift {
-          0%, 100% { color: #e0f2fe; filter: drop-shadow(0 0 8px rgba(96,165,250,.42)); }
-          33% { color: #c4b5fd; filter: drop-shadow(0 0 10px rgba(167,139,250,.55)); }
-          66% { color: #f9a8d4; filter: drop-shadow(0 0 10px rgba(244,114,182,.5)); }
-        }
-        @keyframes detail-card-glow {
-          0%, 100% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-        }
         @keyframes modal-bg-drift {
           0% { transform: translate3d(-1.5%, -1%, 0) scale(1); opacity: .72; }
           100% { transform: translate3d(1.5%, 1.2%, 0) scale(1.06); opacity: 1; }
-        }
-        @keyframes memory-card-shift {
-          0%, 100% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
         }
 
         @keyframes modal-pop {
           from { opacity: 0; transform: translateY(10px) scale(.985); }
           to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        #bio,
+        #projects,
+        #contact {
+          contain: layout paint;
+          content-visibility: auto;
+          contain-intrinsic-size: 1px 900px;
+        }
+
+        #projects,
+        #contact {
+          overflow-x: clip;
         }
 
         @media (max-width: 1024px) {
@@ -2377,9 +2503,46 @@ export default function Home() {
           .page-heading { align-items: flex-start; }
         }
 
+        @media (max-width: 640px) {
+          .hero-name-heading {
+            font-size: clamp(3rem, 15vw, 4.8rem);
+            padding-inline: .12em;
+          }
+          .hero-name-letter { will-change: auto; }
+        }
+
+        .info-panel-outer:not(.opacity-100) .info-panel-dynamic-bg::before,
+        .info-panel-outer:not(.opacity-100) .info-panel-dynamic-bg::after {
+          animation-play-state: paused;
+        }
+
+        @media (max-width: 767px) {
+          .projects-section,
+          #projects,
+          #projects > div,
+          .project-hero-card,
+          .project-showcase,
+          .project-showcase-item {
+            min-width: 0;
+            max-width: 100%;
+          }
+          .project-showcase { overscroll-behavior-x: contain; max-width: 100%; }
+          .project-showcase-item { flex-basis: 100%; width: 100%; }
+          .project-hero-card { padding: 1rem; }
+          .project-hero-card .project-showcase-logo img { padding: 2.25rem; }
+          .glass-card { backdrop-filter: blur(5px); }
+          .portfolio-bg-orbit-a { opacity: .56; animation-duration: 150s; }
+          .portfolio-bg-orbit-b { opacity: .42; animation-duration: 180s; }
+          .portfolio-bg-stars { opacity: .30; animation-duration: 180s; }
+          .portfolio-bg-grid { opacity: .10; animation: none; }
+          .portfolio-bg-glow { opacity: .56; animation: none; }
+          .project-modal-dynamic-bg { animation-duration: 48s; }
+          .info-panel-dynamic-bg::before { animation-duration: 150s; }
+          .info-panel-dynamic-bg::after { animation-duration: 150s; }
+        }
+
         @media (prefers-reduced-motion: reduce) {
-          .portfolio-bg-image, .portfolio-bg-glow, .text-gradient-animated, .hero-name-letter, .cta-button, .download-button, .secondary-button, .game-reset-btn, .memory-card-hidden, .terminal-caret, .sidebar-icon-svg, .project-detail-card, .project-modal-dynamic-bg, .info-panel-dynamic-bg { animation: none !important; }
-          .portfolio-bg-canvas { display: none; }
+          .portfolio-bg-image, .portfolio-bg-orbit, .portfolio-bg-stars, .portfolio-bg-grid, .portfolio-bg-glow, .text-gradient-animated, .hero-name-letter, .cta-button, .download-button, .secondary-button, .game-reset-btn, .terminal-caret, .project-detail-card, .project-modal-dynamic-bg, .info-panel-dynamic-bg { animation: none !important; }
           *, *::before, *::after {
             scroll-behavior: auto !important;
             transition-duration: .01ms !important;
